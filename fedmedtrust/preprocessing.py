@@ -44,10 +44,13 @@ class SharedPreprocessor:
         """Transform one hospital's records without sharing or pooling rows."""
         blocks: List[np.ndarray] = []
         for column in self.metadata.numeric:
-            values = pd.to_numeric(frame[column], errors="coerce").fillna(0.0).to_numpy(dtype=float)
-            blocks.append((values / self._numeric_scales[column]).reshape(-1, 1))
+            series = frame[column] if column in frame.columns else pd.Series(0.0, index=frame.index)
+            values = pd.to_numeric(series, errors="coerce").fillna(0.0).to_numpy(dtype=float)
+            scale = self._numeric_scales.get(column, 1.0)
+            blocks.append((values / scale).reshape(-1, 1))
         for column, categories in self.metadata.categorical.items():
-            values = frame[column].fillna("Unknown").astype(str).to_numpy()
+            series = frame[column] if column in frame.columns else pd.Series("Unknown", index=frame.index)
+            values = series.fillna("Unknown").astype(str).to_numpy()
             blocks.append(np.column_stack([(values == category).astype(float) for category in categories]))
         return np.hstack(blocks) if blocks else np.empty((len(frame), 0), dtype=float)
 

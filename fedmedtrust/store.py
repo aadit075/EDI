@@ -24,6 +24,8 @@ class HospitalStore:
                 connection.execute("ALTER TABLE patients ADD COLUMN created_at TEXT")
             if "xray_predictions" not in columns:
                 connection.execute("ALTER TABLE patients ADD COLUMN xray_predictions TEXT")
+            if "xray_image" not in columns:
+                connection.execute("ALTER TABLE patients ADD COLUMN xray_image TEXT")
 
     def insert_patient(self, patient_id: str, record: Mapping[str, Any]) -> None:
         """Insert one patient record, rejecting empty or duplicate identifiers."""
@@ -42,7 +44,7 @@ class HospitalStore:
         """Return one local patient record, or None when absent."""
         with sqlite3.connect(self.path) as connection:
             row = connection.execute(
-                "SELECT payload,prediction,created_at,xray_predictions FROM patients WHERE patient_id=?",
+                "SELECT payload,prediction,created_at,xray_predictions,xray_image FROM patients WHERE patient_id=?",
                 (patient_id,),
             ).fetchone()
         if row is None:
@@ -52,6 +54,7 @@ class HospitalStore:
         result["prediction"] = row[1]
         result["created_at"] = row[2] or "Unknown"
         result["xray_predictions"] = json.loads(row[3]) if row[3] else None
+        result["xray_image"] = row[4] if len(row) > 4 else None
         return result
 
     def set_prediction(self, patient_id: str, probability: float) -> None:
@@ -60,13 +63,19 @@ class HospitalStore:
         with sqlite3.connect(self.path) as connection:
             connection.execute("UPDATE patients SET prediction=? WHERE patient_id=?", (bounded, patient_id))
 
-    def set_xray_predictions(self, patient_id: str, predictions: Dict[str, Any]) -> None:
+    def set_xray_predictions(self, patient_id: str, predictions: Dict[str, Any], image_data: Optional[str] = None) -> None:
         """Persist X-ray finding probabilities as JSON for a locally stored patient."""
         with sqlite3.connect(self.path) as connection:
-            connection.execute(
-                "UPDATE patients SET xray_predictions=? WHERE patient_id=?",
-                (json.dumps(predictions), patient_id),
-            )
+            if image_data:
+                connection.execute(
+                    "UPDATE patients SET xray_predictions=?, xray_image=? WHERE patient_id=?",
+                    (json.dumps(predictions), image_data, patient_id),
+                )
+            else:
+                connection.execute(
+                    "UPDATE patients SET xray_predictions=? WHERE patient_id=?",
+                    (json.dumps(predictions), patient_id),
+                )
 
     def count(self) -> int:
         """Return the number of records in this hospital's database."""
