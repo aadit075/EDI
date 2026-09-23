@@ -1,0 +1,12 @@
+feature,category,count,positive_rate
+sex,Male,5990,0.678297161936561
+sex,Female,5905,0.6804403048264183
+sex,<MISSING>,705,0.6595744680851063
+smoking_status,never,6955,0.6599568655643422
+smoking_status,former,2883,0.689559486645855
+smoking_status,current,1970,0.7319796954314721
+smoking_status,<MISSING>,792,0.6641414141414141
+physical_activity_level,moderate,5674,0.6857596052167783
+physical_activity_level,low,3870,0.6679586563307494
+physical_activity_level,high,2333,0.6759537076725246
+physical_activity_level,<MISSING>,723,0.681881051175657
