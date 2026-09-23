@@ -25,7 +25,7 @@ fedmedtrust/hospital_stores/*.sqlite
 Data_Entry_2017.csv
 
 # Sample images
-sample_xrays/
+
 
 # Modal / misc
 .modal/
