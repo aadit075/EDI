@@ -3,7 +3,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Union
 
 
 class HospitalStore:
@@ -16,8 +16,14 @@ class HospitalStore:
         with sqlite3.connect(self.path) as connection:
             connection.execute("CREATE TABLE IF NOT EXISTS patients (patient_id TEXT PRIMARY KEY, payload TEXT NOT NULL, prediction REAL, created_at TEXT)")
             columns = {row[1] for row in connection.execute("PRAGMA table_info(patients)").fetchall()}
+            # Migrate: database.py used 'features'; store.py uses 'payload'
+            if "payload" not in columns and "features" in columns:
+                connection.execute("ALTER TABLE patients RENAME COLUMN features TO payload")
+                columns.add("payload")
             if "created_at" not in columns:
                 connection.execute("ALTER TABLE patients ADD COLUMN created_at TEXT")
+            if "xray_predictions" not in columns:
+                connection.execute("ALTER TABLE patients ADD COLUMN xray_predictions TEXT")
 
     def insert_patient(self, patient_id: str, record: Mapping[str, Any]) -> None:
         """Insert one patient record, rejecting empty or duplicate identifiers."""
@@ -35,13 +41,17 @@ class HospitalStore:
     def get_patient(self, patient_id: str) -> Optional[Dict[str, Any]]:
         """Return one local patient record, or None when absent."""
         with sqlite3.connect(self.path) as connection:
-            row = connection.execute("SELECT payload,prediction,created_at FROM patients WHERE patient_id=?", (patient_id,)).fetchone()
+            row = connection.execute(
+                "SELECT payload,prediction,created_at,xray_predictions FROM patients WHERE patient_id=?",
+                (patient_id,),
+            ).fetchone()
         if row is None:
             return None
         result = json.loads(row[0])
         result["patient_id"] = patient_id
         result["prediction"] = row[1]
         result["created_at"] = row[2] or "Unknown"
+        result["xray_predictions"] = json.loads(row[3]) if row[3] else None
         return result
 
     def set_prediction(self, patient_id: str, probability: float) -> None:
@@ -49,6 +59,14 @@ class HospitalStore:
         bounded = min(1.0, max(0.0, float(probability)))
         with sqlite3.connect(self.path) as connection:
             connection.execute("UPDATE patients SET prediction=? WHERE patient_id=?", (bounded, patient_id))
+
+    def set_xray_predictions(self, patient_id: str, predictions: Dict[str, Any]) -> None:
+        """Persist X-ray finding probabilities as JSON for a locally stored patient."""
+        with sqlite3.connect(self.path) as connection:
+            connection.execute(
+                "UPDATE patients SET xray_predictions=? WHERE patient_id=?",
+                (json.dumps(predictions), patient_id),
+            )
 
     def count(self) -> int:
         """Return the number of records in this hospital's database."""
