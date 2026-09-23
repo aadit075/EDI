@@ -15,6 +15,13 @@ from flask import Flask, Response, flash, jsonify, redirect, render_template_str
 from .config import ProjectConfig
 from .store import HospitalStore
 
+try:
+    from fedmedtrust_images.predict_image import predict_xray_from_bytes, DISEASE_LABELS as XRAY_LABELS
+    _XRAY_AVAILABLE = True
+except Exception:  # torch / torchvision not installed
+    _XRAY_AVAILABLE = False
+    XRAY_LABELS = ()
+
 NETWORK_NAME = "HeartShield Network"
 BRANCHES: Dict[str, Dict[str, str]] = {
     "A": {"name": "Northside Cardiac Center", "city": "North District"},
@@ -54,6 +61,7 @@ for _name in ("diabetes", "hypertension", "coronary_artery_disease", "family_his
 
 SHELL = """<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{{ title }} · HeartShield</title><style>
 :root{--ink:#10233f;--muted:#64748b;--blue:#1769e0;--cyan:#15b8a6;--bg:#f4f7fb;--line:#e5ebf3;--card:#fff;--red:#e05252}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:14px Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.app{display:flex;min-height:100vh}.side{width:248px;background:#0d2341;color:#d9e6fa;padding:25px 18px;display:flex;flex-direction:column}.brand{font-size:20px;font-weight:800;color:white;margin:0 10px 36px;letter-spacing:-.4px}.brand span{color:#49d5c4}.nav a{display:block;color:#a9bfdc;text-decoration:none;padding:12px 13px;border-radius:10px;margin:4px 0}.nav a:hover,.nav .active{background:#183c68;color:white}.side small{margin-top:auto;color:#7f9abc;line-height:1.5;padding:10px}.main{flex:1;max-width:1500px}.top{height:74px;background:white;border-bottom:1px solid var(--line);padding:0 38px;display:flex;justify-content:space-between;align-items:center}.top h1{font-size:21px;margin:0}.who{color:var(--muted)}.content{padding:34px 38px;max-width:1240px}.eyebrow{color:var(--blue);font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:1.3px}.muted{color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;box-shadow:0 5px 18px #153d6910}.stat{font-size:31px;font-weight:800;margin:8px 0}.stat-label{color:var(--muted)}.hero{background:linear-gradient(120deg,#10355e,#1876c9);color:white;border-radius:18px;padding:30px;margin-bottom:22px}.hero h2{font-size:28px;margin:5px 0 10px}.hero p{color:#d6eaff;max-width:650px}.btn{border:0;border-radius:9px;background:var(--blue);color:white;padding:11px 17px;font-weight:700;text-decoration:none;display:inline-block;cursor:pointer}.btn.secondary{background:#eaf2ff;color:#1555af}.btn.ghost{background:transparent;color:#eaf2ff;border:1px solid #6f9bd0}.row{display:flex;align-items:center;justify-content:space-between;gap:15px}.section-title{margin:0 0 16px;font-size:18px}.notice{padding:13px 16px;background:#fff8e6;color:#805b00;border:1px solid #f5df9d;border-radius:10px;margin:14px 0}.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:17px}.field label{display:block;font-size:12px;font-weight:750;margin-bottom:7px;color:#44546a}.field input,.field select{width:100%;border:1px solid #d5deea;border-radius:8px;background:white;padding:11px;color:var(--ink);font-size:14px}.field input:focus,.field select:focus{outline:2px solid #bcd7ff;border-color:var(--blue)}.actions{margin-top:24px;display:flex;gap:10px;align-items:center}.risk{font-size:44px;font-weight:850;color:var(--blue)}.bar{height:10px;background:#e7eef8;border-radius:9px;overflow:hidden}.bar i{display:block;height:100%;background:linear-gradient(90deg,#19b99c,#f0bb4c,#de5f59);border-radius:9px}.factors{display:grid;gap:10px}.factor{display:grid;grid-template-columns:170px 1fr 55px;gap:10px;align-items:center;color:#42536b}.table-wrap{overflow:auto}.table{width:100%;border-collapse:collapse}.table th,.table td{text-align:left;padding:13px 10px;border-bottom:1px solid var(--line)}.table th{font-size:12px;text-transform:uppercase;color:var(--muted)}.pill{border-radius:20px;padding:5px 10px;font-size:12px;font-weight:700;background:#e9f8f5;color:#087c6d}.pill.high{background:#fff0ed;color:#b7473d}.login{min-height:100vh;display:grid;place-items:center;background:radial-gradient(circle at 80% 10%,#2865a8,#0b2343 55%);padding:20px}.login-box{width:min(500px,100%);background:white;border-radius:20px;padding:36px;box-shadow:0 20px 60px #0004}.branch-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:18px 0}.branch{border:1px solid var(--line);padding:10px 4px;text-align:center;border-radius:9px;cursor:pointer;background:#fafcff}.branch.selected{border-color:var(--blue);background:#eaf2ff;color:var(--blue)}.error{color:var(--red);margin:10px 0}.fine{font-size:12px;color:var(--muted)}@media(max-width:850px){.side{width:70px;padding:20px 8px}.brand{font-size:0;margin:0 10px 30px}.brand span{font-size:20px}.nav a{font-size:0;text-align:center}.nav a:first-letter{font-size:18px}.side small{display:none}.content,.top{padding-left:20px;padding-right:20px}.grid,.form-grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.grid,.form-grid{grid-template-columns:1fr}.top h1{font-size:16px}.who{font-size:12px}.content{padding-top:22px}}
+.xray-upload{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;background:#fafcff;cursor:pointer;transition:border-color .2s}.xray-upload:hover{border-color:var(--blue)}.xray-upload input{display:none}.xray-upload b{display:block;color:var(--ink);margin-top:8px}.xray-upload small{color:var(--muted)}.xray-filename{margin-top:8px;color:var(--blue);font-size:13px;font-weight:600}.finding-row{display:grid;grid-template-columns:160px 1fr 56px;gap:10px;align-items:center;margin:6px 0}.finding-label{font-size:13px;color:#42536b}.finding-bar{height:8px;background:#e7eef8;border-radius:6px;overflow:hidden}.finding-fill{height:100%;border-radius:6px;transition:width .3s}.finding-pct{font-size:12px;font-weight:700;text-align:right}.badge-high{background:#fff0ed;color:#b7473d;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:700}.badge-mod{background:#fff8e6;color:#805b00;border-radius:4px;padding:1px 5px;font-size:11px;font-weight:700}.xray-section{margin-top:22px}.xray-highlight{background:linear-gradient(135deg,#eaf7f5,#f0f7ff);border:1px solid #c5e8e4;border-radius:12px;padding:16px 20px;margin-bottom:14px}
 </style></head><body>{{ body|safe }}</body></html>"""
 
 LOGIN = """<div class='login'><div class='login-box'><div class='eyebrow'>Private clinical workspace</div><h1 style='font-size:30px;margin:8px 0'>HeartShield <span style='color:#15b8a6'>Network</span></h1><p class='muted'>Federated cardiac-risk demonstration portal for hospital teams.</p>{% with messages=get_flashed_messages() %}{% if messages %}<div class='error'>{{ messages[0] }}</div>{% endif %}{% endwith %}<form method='post'><label class='field'><span style='display:block;margin-bottom:7px;font-weight:700'>Choose branch</span><div class='branch-grid'>{% for key,branch in branches.items() %}<label class='branch {% if request.form.get("hospital", "A") == key %}selected{% endif %}'><input type='radio' name='hospital' value='{{ key }}' {% if request.form.get("hospital", "A") == key %}checked{% endif %} style='display:none'> <b>{{ key }}</b><br><small>{{ branch.name.split(" ")[0] }}</small></label>{% endfor %}</div></label><div class='field' style='margin-top:18px'><label>Username</label><input name='username' required autocomplete='username' value='{{ request.form.get("username", "") }}'></div><div class='field' style='margin-top:14px'><label>Password</label><input type='password' name='password' required autocomplete='current-password'></div><button class='btn' style='width:100%;margin-top:22px'>Sign in to branch</button></form><p class='fine' style='margin-top:20px'>Demo only · credentials are shown in the project documentation. No real patient data.</p></div></div>"""
@@ -173,18 +181,35 @@ def create_app(config: Optional[ProjectConfig] = None) -> Flask:
             values["patient_id"] = patient_id
             if not values.get("age"):
                 flash("Age is required for a meaningful demo assessment.")
-            elif stores[current_hospital()].get_patient(patient_id) is not None:
-                flash("That patient ID already exists in this branch. Choose a unique ID.")
             else:
+                store = stores[current_hospital()]
+                # If the ID already exists just go straight to its report
+                if store.get_patient(patient_id) is not None:
+                    return redirect(url_for("report", patient_id=patient_id))
                 probability = _trained_probability(values, artifact)
                 model_source = "trained federated model"
                 if probability is None:
                     probability = _probability(values)
                     model_source = "demo fallback — run train_federated.py first"
                 values["model_source"] = model_source
-                stores[current_hospital()].insert_patient(patient_id, values); stores[current_hospital()].set_prediction(patient_id, probability)
+                try:
+                    store.insert_patient(patient_id, values)
+                except ValueError:
+                    # race / double-submit — the row is already there, go to report
+                    return redirect(url_for("report", patient_id=patient_id))
+                store.set_prediction(patient_id, probability)
+                # ── X-ray inference (optional) ───────────────────────────────
+                xray_file = request.files.get("xray_image")
+                if xray_file and xray_file.filename and _XRAY_AVAILABLE:
+                    try:
+                        image_bytes = xray_file.read()
+                        xray_preds = predict_xray_from_bytes(current_hospital(), image_bytes)
+                        store.set_xray_predictions(patient_id, xray_preds)
+                    except Exception:
+                        pass  # silently skip — tabular prediction still works
                 return redirect(url_for("report", patient_id=patient_id))
-        return _page("New assessment", """<div class='row'><div><div class='eyebrow'>Branch {{ hospital }} · New assessment</div><h2>Clinical risk intake</h2><p class='muted'>Enter synthetic or de-identified values. Required fields are marked.</p></div></div><div class='notice'>This tool is a research demonstration. It does not diagnose, triage, or replace professional clinical judgment.</div><form method='post' class='card'><div class='form-grid'><div class='field'><label>Patient ID <span class='muted'>(optional)</span></label><input name='patient_id' value='{{ values.get("patient_id", "") }}' placeholder='Auto-generated if blank'></div>{% for key,label,kind,unit in fields %}<div class='field'><label>{{ label }} <span class='muted'>{{ unit }}</span>{% if key == "age" %} *{% endif %}</label>{% if kind == "select" %}<select name='{{ key }}'><option value=''>Unknown</option>{% for val,text in selects.get(key, []) %}<option value='{{ val }}' {% if values.get(key)==val %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>{% else %}<input type='number' step='any' name='{{ key }}' value='{{ values.get(key, "") }}' {% if key == "age" %}required{% endif %}>{% endif %}</div>{% endfor %}</div><div class='actions'><button class='btn'>Generate local prediction</button><a class='btn secondary' href='{{ url_for("dashboard") }}'>Cancel</a></div></form>""", hospital=current_hospital(), fields=FIELDS, selects=SELECTS, values=values)
+        return _page("New assessment", """<div class='row'><div><div class='eyebrow'>Branch {{ hospital }} · New assessment</div><h2>Clinical risk intake</h2><p class='muted'>Enter synthetic or de-identified values. Required fields are marked.</p></div></div><div class='notice'>This tool is a research demonstration. It does not diagnose, triage, or replace professional clinical judgment.</div><form method='post' enctype='multipart/form-data' class='card'><div class='form-grid'><div class='field'><label>Patient ID <span class='muted'>(optional)</span></label><input name='patient_id' value='{{ values.get("patient_id", "") }}' placeholder='Auto-generated if blank'></div>{% for key,label,kind,unit in fields %}<div class='field'><label>{{ label }} <span class='muted'>{{ unit }}</span>{% if key == "age" %} *{% endif %}</label>{% if kind == "select" %}<select name='{{ key }}'><option value=''>Unknown</option>{% for val,text in selects.get(key, []) %}<option value='{{ val }}' {% if values.get(key)==val %}selected{% endif %}>{{ text }}</option>{% endfor %}</select>{% else %}<input type='number' step='any' name='{{ key }}' value='{{ values.get(key, "") }}' {% if key == "age" %}required{% endif %}>{% endif %}</div>{% endfor %}</div>{% if xray_available %}<div style='margin-top:24px'><div class='eyebrow' style='margin-bottom:12px'>Chest X-ray (optional)</div><label class='xray-upload' id='xray-label'><input type='file' name='xray_image' id='xray-input' accept='image/*,.dcm'><svg width='36' height='36' fill='none' stroke='#94a3b8' stroke-width='1.5' viewBox='0 0 24 24'><path d='M12 16V8m0 0-3 3m3-3 3 3'/><rect x='3' y='3' width='18' height='18' rx='3'/></svg><b>Upload chest X-ray</b><small>PNG, JPG accepted · optional</small></label><div class='xray-filename' id='xray-name' style='display:none'></div></div>{% endif %}<div class='actions'><button class='btn'>Generate local prediction</button><a class='btn secondary' href='{{ url_for("dashboard") }}'>Cancel</a></div></form><script>var inp=document.getElementById('xray-input');if(inp){inp.addEventListener('change',function(){var lbl=document.getElementById('xray-label');var nm=document.getElementById('xray-name');if(inp.files.length){lbl.style.borderColor='var(--blue)';nm.textContent='Selected: '+inp.files[0].name;nm.style.display='block';}});}</script>""",
+        hospital=current_hospital(), fields=FIELDS, selects=SELECTS, values=values, xray_available=_XRAY_AVAILABLE)
 
     @app.get("/patients")
     def patients() -> str | Response:
@@ -201,10 +226,69 @@ def create_app(config: Optional[ProjectConfig] = None) -> Flask:
         if denied: return denied
         patient = stores[current_hospital()].get_patient(patient_id)
         if patient is None: return _page("Not found", "<div class='card'><h2>Assessment not found</h2><p class='muted'>This ID is not present in your branch.</p></div>"), 404
-        probability = float(patient.get("prediction") or _probability(patient)); risk = "Elevated" if probability >= 0.5 else "Lower"; factors = _factors(patient)
+        probability = float(patient.get("prediction") or _probability(patient))
+        risk = "Elevated" if probability >= 0.5 else "Lower"
+        factors = _factors(patient)
         model_source = str(patient.get("model_source", "demo fallback — run train_federated.py first"))
-        body = """<div class='row'><div><div class='eyebrow'>HeartShield Network · Branch {{ hospital }}</div><h2>Assessment report</h2><p class='muted'>Patient ID: <b>{{ patient_id }}</b> · {{ generated }}</p></div><button class='btn secondary' onclick='window.print()'>Download / print</button></div><div class='grid' style='margin-top:22px'><div class='card'><div class='stat'>{{ "%.0f"|format(probability*100) }}%</div><div class='stat-label'>Estimated demo probability</div></div><div class='card'><div class='stat' style='color:{% if probability >= 0.5 %}#c5564c{% else %}#119c88{% endif %}'>{{ risk }}</div><div class='stat-label'>Demo risk band</div></div><div class='card'><div class='stat'>Local</div><div class='stat-label'>Data residency</div></div></div><div class='card' style='margin-top:22px'><h3 class='section-title'>Model used</h3><p>{{ model_source }}</p><h3 class='section-title'>Important contributing factors</h3><div class='factors'>{% for name,value in factors %}<div class='factor'><span>{{ name }}</span><div class='bar'><i style='width:{{ value*100 if value*100 < 100 else 100 }}%'></i></div><b>{{ "%.0f"|format(value*100) }}</b></div>{% endfor %}</div><p class='fine' style='margin-top:20px'>Factors are heuristic explainability cues for this synthetic demo, not validated clinical explanations.</p></div><div class='notice'>Non-diagnostic synthetic demonstration. Do not use this report for patient care, treatment, or emergency decisions. Consult a qualified clinician.</div>"""
-        return _page("Assessment report", body, hospital=current_hospital(), patient_id=patient_id, patient=patient, probability=probability, risk=risk, factors=factors, model_source=model_source, generated=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+        xray_preds: Optional[Dict[str, float]] = patient.get("xray_predictions")
+
+        # Sort findings by probability descending for display
+        xray_sorted = sorted(xray_preds.items(), key=lambda x: x[1], reverse=True) if xray_preds else []
+
+        # Cardiomegaly gets a highlight if present and notable (>= 0.3)
+        cardiomegaly_prob = xray_preds.get("Cardiomegaly", 0.0) if xray_preds else 0.0
+
+        body = """<div class='row'><div><div class='eyebrow'>HeartShield Network · Branch {{ hospital }}</div><h2>Assessment report</h2><p class='muted'>Patient ID: <b>{{ patient_id }}</b> · {{ generated }}</p></div><button class='btn secondary' onclick='window.print()'>Download / print</button></div>
+<div class='grid' style='margin-top:22px'>
+  <div class='card'><div class='stat'>{{ "%.0f"|format(probability*100) }}%</div><div class='stat-label'>Cardiac risk score</div></div>
+  <div class='card'><div class='stat' style='color:{% if probability >= 0.5 %}#c5564c{% else %}#119c88{% endif %}'>{{ risk }}</div><div class='stat-label'>Risk band</div></div>
+  <div class='card'><div class='stat'>Local</div><div class='stat-label'>Data residency</div></div>
+</div>
+<div class='card' style='margin-top:22px'>
+  <h3 class='section-title'>Tabular model</h3>
+  <p style='margin:0 0 14px;color:var(--muted);font-size:13px'>{{ model_source }}</p>
+  <h3 class='section-title'>Important contributing factors</h3>
+  <div class='factors'>{% for name,value in factors %}<div class='factor'><span>{{ name }}</span><div class='bar'><i style='width:{{ value*100 if value*100 < 100 else 100 }}%'></i></div><b>{{ "%.0f"|format(value*100) }}</b></div>{% endfor %}</div>
+  <p class='fine' style='margin-top:16px'>Factors are heuristic explainability cues for this synthetic demo, not validated clinical explanations.</p>
+</div>
+{% if xray_sorted %}
+<div class='card xray-section'>
+  <div class='row' style='margin-bottom:14px'>
+    <h3 class='section-title' style='margin:0'>Chest X-ray findings</h3>
+    <span class='pill'>Federated ResNet18 · Round 2 · AUC ≈ 0.81</span>
+  </div>
+  {% if cardiomegaly_prob >= 0.3 %}
+  <div class='xray-highlight'>
+    <div style='display:flex;align-items:center;gap:10px'>
+      <svg width='22' height='22' fill='none' stroke='#0e7a6e' stroke-width='2' viewBox='0 0 24 24'><path d='M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm0 5v4m0 4h.01'/></svg>
+      <div>
+        <b style='color:#0e5c55'>Cardiomegaly</b>
+        <span style='color:#0e7a6e;font-size:13px'> · {{ "%.0f"|format(cardiomegaly_prob*100) }}% probability</span>
+        {% if cardiomegaly_prob >= 0.5 %}<span class='badge-high'>Notable</span>{% else %}<span class='badge-mod'>Borderline</span>{% endif %}
+        <p style='margin:4px 0 0;font-size:12px;color:#0e7a6e'>Enlarged heart detected on X-ray — corroborates cardiac risk assessment above.</p>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  <div style='display:grid;grid-template-columns:1fr 1fr;gap:6px 24px'>
+  {% for label, prob in xray_sorted %}
+  <div class='finding-row'>
+    <span class='finding-label'>{{ label.replace("_"," ") }}</span>
+    <div class='finding-bar'><div class='finding-fill' style='width:{{ (prob*100)|round|int }}%;background:{% if prob >= 0.5 %}#e05252{% elif prob >= 0.3 %}#f0bb4c{% else %}#19b99c{% endif %}'></div></div>
+    <span class='finding-pct' style='color:{% if prob >= 0.5 %}#c5564c{% elif prob >= 0.3 %}#805b00{% else %}#0e7a6e{% endif %}'>{{ "%.0f"|format(prob*100) }}%</span>
+  </div>
+  {% endfor %}
+  </div>
+  <p class='fine' style='margin-top:16px'>Multi-label NIH ChestX-ray14 classifier. Federated training across 5 hospital partitions. Non-diagnostic research demonstration.</p>
+</div>
+{% endif %}
+<div class='notice'>Non-diagnostic synthetic demonstration. Do not use this report for patient care, treatment, or emergency decisions. Consult a qualified clinician.</div>"""
+        return _page("Assessment report", body,
+            hospital=current_hospital(), patient_id=patient_id, patient=patient,
+            probability=probability, risk=risk, factors=factors,
+            model_source=model_source, xray_sorted=xray_sorted,
+            cardiomegaly_prob=cardiomegaly_prob,
+            generated=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
 
     @app.get("/api/health")
     def health() -> Any:

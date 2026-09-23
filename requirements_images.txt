@@ -1,0 +1,6 @@
+# Local requirements for running the Modal entrypoint
+# (torch/torchvision are installed inside the Modal container, not needed locally)
+modal>=0.64
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.2
